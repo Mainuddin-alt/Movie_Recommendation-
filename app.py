@@ -2,44 +2,54 @@ import streamlit as st
 import joblib
 import requests
 
-# -----------------------------
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# --------------------------------------------------
 # PAGE CONFIG
-# -----------------------------
+# --------------------------------------------------
 st.set_page_config(
     page_title="Movie Recommendation System",
     page_icon="🎬",
     layout="wide"
 )
 
-# -----------------------------
+# --------------------------------------------------
 # LOAD DATA
-# -----------------------------
-movies = joblib.load("movies.pkl")
-similarity = joblib.load("similarity.pkl")
+# --------------------------------------------------
+movies = joblib.load("new_movies.pkl")
 
-# -----------------------------
-# API KEY
-# -----------------------------
+# --------------------------------------------------
+# CREATE SIMILARITY (Only once)
+# --------------------------------------------------
+@st.cache_resource
+def create_similarity(data):
+    tfidf = TfidfVectorizer(stop_words="english")
+    vectors = tfidf.fit_transform(data["combined_features"])
+    similarity = cosine_similarity(vectors)
+    return similarity
+
+similarity = create_similarity(movies)
+
+# --------------------------------------------------
+# TMDB API KEY
+# --------------------------------------------------
 API_KEY = st.secrets["TMDB_API_KEY"]
 
-# -----------------------------
+# --------------------------------------------------
 # FETCH POSTER
-# -----------------------------
+# --------------------------------------------------
 def fetch_poster(movie_id):
 
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}"
-
     try:
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}"
+
         response = requests.get(url, timeout=10)
-
-        print("Movie ID :", movie_id)
-        print("Status Code :", response.status_code)
-
-        data = response.json()
-        print(data)
 
         if response.status_code != 200:
             return None
+
+        data = response.json()
 
         poster_path = data.get("poster_path")
 
@@ -48,14 +58,12 @@ def fetch_poster(movie_id):
 
         return None
 
-    except Exception as e:
-        print("Error :", e)
+    except:
         return None
 
-
-# -----------------------------
+# --------------------------------------------------
 # RECOMMEND FUNCTION
-# -----------------------------
+# --------------------------------------------------
 def recommend(movie):
 
     movie_index = movies[movies["title"] == movie].index[0]
@@ -68,31 +76,34 @@ def recommend(movie):
         key=lambda x: x[1]
     )[1:6]
 
-    recommended_movies = []
-    recommended_posters = []
+    names = []
+    posters = []
 
     for i in movie_list:
 
-        movie_id = movies.iloc[i[0]]["id"]
+        index = i[0]
 
-        recommended_movies.append(
-            movies.iloc[i[0]]["title"]
+        names.append(
+            movies.iloc[index]["title"]
         )
 
-        recommended_posters.append(
-            fetch_poster(movie_id)
+        posters.append(
+            fetch_poster(
+                movies.iloc[index]["id"]
+            )
         )
 
-    return recommended_movies, recommended_posters
+    return names, posters
 
-
-# -----------------------------
+# --------------------------------------------------
 # UI
-# -----------------------------
+# --------------------------------------------------
 st.title("🎬 Movie Recommendation System")
 
+st.write("Select a movie and get similar movie recommendations.")
+
 selected_movie = st.selectbox(
-    "Choose Movie",
+    "Search or Select a Movie",
     movies["title"].values
 )
 
@@ -107,8 +118,9 @@ if st.button("Recommend"):
         with col:
 
             if poster:
-                st.image(poster, use_container_width=True)
-            else:
-                st.write("❌ No Poster")
+                st.image(poster)
 
-            st.caption(name)
+            else:
+                st.write("Poster Not Available")
+
+            st.markdown(f"**{name}**")
